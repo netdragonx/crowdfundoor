@@ -1,5 +1,3 @@
-## BURNINATOR
-
 ```
 
                                 _  __                 _
@@ -13,7 +11,7 @@
 
 ```
 
-This smart contract allows users to crowdfund the purchase of an ERC721 token.
+Crowdfundoor is a smart contract that allows users to crowdfund the purchase of an ERC721 token.
 
 The intended use is to help recover stolen assets.
 
@@ -28,6 +26,8 @@ You'll need to use [Etherscan](https://etherscan.io) to interact with this contr
 3. Click `Write Contract` inner tab
 4. Click `Connect to Web3` and connect your wallet.
 
+---
+
 **Start a new campaign:**
 
 `startCampaign(tokenAddress, tokenId, recipient)`
@@ -38,6 +38,8 @@ You'll need to use [Etherscan](https://etherscan.io) to interact with this contr
 4. Click `Write`
 5. Confirm with your wallet
 
+---
+
 **Donate ether to campaign:**
 
 `donate(campaignId)`
@@ -47,7 +49,9 @@ You'll need to use [Etherscan](https://etherscan.io) to interact with this contr
 3. Click `Write`
 4. Confirm with your wallet
 
-**Accept an campaign offer:**
+---
+
+**Accept a campaign offer:**
 
 Here are the steps to accept an outstanding offer from donors.
 
@@ -64,6 +68,8 @@ _Important:_ Before calling `accept`, you must first approve the contract
    - For other amounts, you can use [eth-converter.com](https://eth-converter.com/)
 3. Click `Write`
 4. Confirm with your wallet
+
+---
 
 **Withdraw your donation:**
 
