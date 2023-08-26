@@ -13,80 +13,112 @@ pragma solidity ^0.8.20;
 //
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
-contract Crowdfundoor {
-    mapping(address => mapping(uint256 => mapping(address => bool))) public accepted;
-    mapping(address => mapping(uint256 => mapping(address => uint256))) public donations;
-    mapping(address => mapping(uint256 => mapping(address => mapping(address => uint256)))) public receipts;
+struct Campaign {
+    uint256 amount;
+    uint256 tokenId;
+    address tokenAddress;
+    address recipient;
+    bool isAccepted;
+    mapping(address => uint256) donations;
+}
 
-    error AlreadyAccepted();
+contract Crowdfundoor {
+    mapping(uint256 => Campaign) public campaigns;
+    uint256 public nextCampaignId;
+
     error AlreadyOwned();
+    error AmountLessThanMinimum();
     error DonationRequired();
-    error InvalidFund();
     error InvalidRecipient();
     error NoDonationToWithdraw();
     error NotTokenOwner();
     error TransferFailed();
+    error CampaignAlreadyAccepted();
 
-    event Accepted(address indexed tokenAddress, uint256 indexed tokenId, address indexed recipient);
-    event Donation(address indexed tokenAddress, uint256 indexed tokenId, address indexed recipient, uint256 amount);
-    event Withdrawal(address indexed tokenAddress, uint256 indexed tokenId, address indexed recipient, uint256 amount);
+    event Start(uint256 indexed campaignId, address indexed tokenAddress, uint256 indexed tokenId, address recipient);
+    event Donation(uint256 indexed campaignId, address indexed donor, uint256 amount);
+    event Withdrawal(uint256 indexed campaignId, address indexed donor, uint256 amount);
+    event Accepted(uint256 indexed campaignId);
 
-    function donate(address tokenAddress, uint256 tokenId, address recipient) external payable {
-        if (accepted[tokenAddress][tokenId][recipient]) {
-            revert AlreadyAccepted();
-        }
-
-        if (msg.value == 0) {
-            revert DonationRequired();
-        }
-
+    function startCampaign(address tokenAddress, uint256 tokenId, address recipient) external returns (uint256) {
         if (IERC721(tokenAddress).ownerOf(tokenId) == recipient) {
             revert AlreadyOwned();
         }
 
-        receipts[tokenAddress][tokenId][recipient][msg.sender] += msg.value;
-        donations[tokenAddress][tokenId][recipient] += msg.value;
+        uint256 campaignId = nextCampaignId;
 
-        emit Donation(tokenAddress, tokenId, recipient, msg.value);
-    }
+        Campaign storage newCampaign = campaigns[campaignId];
+        newCampaign.tokenAddress = tokenAddress;
+        newCampaign.tokenId = tokenId;
+        newCampaign.recipient = recipient;
 
-    function withdraw(address tokenAddress, uint256 tokenId, address recipient) external {
-        if (accepted[tokenAddress][tokenId][recipient]) {
-            revert AlreadyAccepted();
+        unchecked {
+            nextCampaignId++;
         }
 
-        if (receipts[tokenAddress][tokenId][recipient][msg.sender] == 0) {
-            revert NoDonationToWithdraw();
-        }
+        emit Start(campaignId, tokenAddress, tokenId, recipient);
 
-        uint256 donation = receipts[tokenAddress][tokenId][recipient][msg.sender];
-        receipts[tokenAddress][tokenId][recipient][msg.sender] = 0;
-        donations[tokenAddress][tokenId][recipient] -= donation;
-
-        (bool success,) = payable(msg.sender).call{value: donation}("");
-        if (!success) revert TransferFailed();
-
-        emit Withdrawal(tokenAddress, tokenId, recipient, donation);
+        return campaignId;
     }
 
-    function accept(address tokenAddress, uint256 tokenId, address recipient, uint256 minimumAmount) external {
-        if (IERC721(tokenAddress).ownerOf(tokenId) != msg.sender) {
+    function donate(uint256 campaignId) external payable {
+        if (msg.value == 0) {
+            revert DonationRequired();
+        }
+
+        Campaign storage campaign = campaigns[campaignId];
+
+        if (campaign.isAccepted) {
+            revert CampaignAlreadyAccepted();
+        }
+
+        campaign.amount += msg.value;
+        campaign.donations[msg.sender] += msg.value;
+
+        emit Donation(campaignId, msg.sender, msg.value);
+    }
+
+    function accept(uint256 campaignId, uint256 minimumAmount) external {
+        Campaign storage campaign = campaigns[campaignId];
+
+        if (campaign.amount < minimumAmount) {
+            revert AmountLessThanMinimum();
+        }
+
+        if (IERC721(campaign.tokenAddress).ownerOf(campaign.tokenId) != msg.sender) {
             revert NotTokenOwner();
         }
 
-        uint256 amount = donations[tokenAddress][tokenId][recipient];
-        if (amount < minimumAmount || amount == 0) {
-            revert InvalidFund();
-        }
+        uint256 amount = campaign.amount;
+        campaign.amount = 0;
+        campaign.isAccepted = true;
 
-        donations[tokenAddress][tokenId][recipient] = 0;
-        accepted[tokenAddress][tokenId][recipient] = true;
+        IERC721(campaign.tokenAddress).transferFrom(msg.sender, campaign.recipient, campaign.tokenId);
 
         (bool success,) = payable(msg.sender).call{value: amount}("");
         if (!success) revert TransferFailed();
 
-        IERC721(tokenAddress).transferFrom(msg.sender, recipient, tokenId);
+        emit Accepted(campaignId);
+    }
 
-        emit Accepted(tokenAddress, tokenId, recipient);
+    function withdraw(uint256 campaignId) external {
+        Campaign storage campaign = campaigns[campaignId];
+
+        if (campaign.isAccepted) {
+            revert CampaignAlreadyAccepted();
+        }
+
+        uint256 donation = campaign.donations[msg.sender];
+        if (donation == 0) {
+            revert NoDonationToWithdraw();
+        }
+
+        campaign.donations[msg.sender] = 0;
+        campaign.amount -= donation;
+
+        (bool success,) = payable(msg.sender).call{value: donation}("");
+        if (!success) revert TransferFailed();
+
+        emit Withdrawal(campaignId, msg.sender, donation);
     }
 }
