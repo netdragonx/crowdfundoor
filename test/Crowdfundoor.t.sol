@@ -48,6 +48,38 @@ contract CrowdfundoorTest is Test {
         assertEq(crowdfundoor.accepted(address(mock721), tokenId, recipient1), false);
     }
 
+    function testDonateMultipleFromOneDonor() public {
+        uint256 donationAmount1 = 1 ether;
+        uint256 donationAmount2 = 2 ether;
+
+        vm.startPrank(donor1);
+        crowdfundoor.donate{value: donationAmount1}(address(mock721), tokenId, recipient1);
+        crowdfundoor.donate{value: donationAmount2}(address(mock721), tokenId, recipient1);
+
+        assertEq(crowdfundoor.donations(address(mock721), tokenId, recipient1), donationAmount1 + donationAmount2);
+    }
+
+    function testDonateMultipleFromSeparateDonors() public {
+        uint256 donationAmount1 = 1 ether;
+        uint256 donationAmount2 = 2 ether;
+
+        vm.startPrank(donor1);
+        crowdfundoor.donate{value: donationAmount1}(address(mock721), tokenId, recipient1);
+
+        vm.startPrank(donor2);
+        crowdfundoor.donate{value: donationAmount2}(address(mock721), tokenId, recipient1);
+
+        vm.startPrank(donor1);
+        crowdfundoor.donate{value: donationAmount1}(address(mock721), tokenId, recipient1);
+
+        vm.startPrank(donor2);
+        crowdfundoor.donate{value: donationAmount2}(address(mock721), tokenId, recipient1);
+
+        assertEq(
+            crowdfundoor.donations(address(mock721), tokenId, recipient1), donationAmount1 * 2 + donationAmount2 * 2
+        );
+    }
+
     function testWithdraw() public {
         uint256 donationAmount = 1 ether;
 
@@ -73,33 +105,27 @@ contract CrowdfundoorTest is Test {
         assertEq(mock721.ownerOf(tokenId), recipient1);
     }
 
-    function testMultipleDonations() public {
-        uint256 donationAmount1 = 1 ether;
-        uint256 donationAmount2 = 2 ether;
-
-        vm.startPrank(donor1);
-        crowdfundoor.donate{value: donationAmount1}(address(mock721), tokenId, recipient1);
-
-        vm.startPrank(donor2);
-        crowdfundoor.donate{value: donationAmount2}(address(mock721), tokenId, recipient1);
-
-        assertEq(crowdfundoor.donations(address(mock721), tokenId, recipient1), donationAmount1 + donationAmount2);
-    }
-
-    function testAcceptWithInsufficientFunds() public {
+    function testFailAcceptDueToMinimumNotMet() public {
         uint256 donationAmount = 1 ether;
-        uint256 minimumAmount = 2 ether;
+        uint256 minimumAmount = 3 ether;
 
-        vm.startPrank(donor1);
+        vm.prank(donor1);
         crowdfundoor.donate{value: donationAmount}(address(mock721), tokenId, recipient1);
 
-        vm.startPrank(hodler1);
-        mock721.approve(address(crowdfundoor), tokenId);
-        try crowdfundoor.accept(address(mock721), tokenId, recipient1, minimumAmount) {
-            fail("Should have reverted due to insufficient funds");
-        } catch {}
+        vm.prank(donor2);
+        crowdfundoor.donate{value: donationAmount}(address(mock721), tokenId, recipient1);
 
-        assertEq(crowdfundoor.donations(address(mock721), tokenId, recipient1), donationAmount);
+        vm.prank(donor3);
+        crowdfundoor.donate{value: donationAmount}(address(mock721), tokenId, recipient1);
+
+        vm.prank(hodler1);
+        mock721.approve(address(crowdfundoor), tokenId);
+
+        vm.prank(donor3);
+        crowdfundoor.withdraw(address(mock721), tokenId, recipient1);
+
+        vm.prank(hodler1);
+        crowdfundoor.accept(address(mock721), tokenId, recipient1, minimumAmount);
     }
 
     function testRedonationAfterWithdrawal() public {
@@ -147,10 +173,14 @@ contract CrowdfundoorTest is Test {
         uint256 redonationAmount = 1 ether;
 
         vm.startPrank(donor1);
+
         crowdfundoor.donate{value: donationAmount}(address(mock721), tokenId, recipient1);
+        assertEq(crowdfundoor.donations(address(mock721), tokenId, recipient1), donationAmount);
+
         crowdfundoor.withdraw(address(mock721), tokenId, recipient1);
         crowdfundoor.donate{value: redonationAmount}(address(mock721), tokenId, recipient2);
 
-        assertEq(crowdfundoor.accepted(address(mock721), tokenId, recipient1), false);
+        assertEq(crowdfundoor.donations(address(mock721), tokenId, recipient1), 0);
+        assertEq(crowdfundoor.donations(address(mock721), tokenId, recipient2), redonationAmount);
     }
 }
