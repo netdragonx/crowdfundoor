@@ -17,6 +17,8 @@ contract CrowdfundoorTest is Test {
     address public recipient1;
     address public recipient2;
 
+    uint256 initialBalance = 100 ether;
+
     function setUp() public {
         crowdfundoor = new Crowdfundoor();
         mock721 = new Mock721();
@@ -31,10 +33,10 @@ contract CrowdfundoorTest is Test {
 
         mock721.mint(hodler1, 1);
 
-        vm.deal(donor1, 100 ether);
-        vm.deal(donor2, 100 ether);
-        vm.deal(donor3, 100 ether);
-        vm.deal(hodler1, 100 ether);
+        vm.deal(donor1, initialBalance);
+        vm.deal(donor2, initialBalance);
+        vm.deal(donor3, initialBalance);
+        vm.deal(hodler1, initialBalance);
     }
 
     // for test mapping reference:
@@ -75,7 +77,6 @@ contract CrowdfundoorTest is Test {
 
     function testDonate() public {
         uint256 campaignId = crowdfundoor.startCampaign(address(mock721), tokenId, recipient1);
-
         uint256 donationAmount = 1 ether;
 
         vm.prank(donor1);
@@ -85,6 +86,7 @@ contract CrowdfundoorTest is Test {
 
         assertEq(amount, donationAmount);
         assertEq(isAccepted, false);
+        assertEq(donor1.balance, initialBalance - donationAmount);
     }
 
     function testDonateFromTwoDonors() public {
@@ -101,6 +103,8 @@ contract CrowdfundoorTest is Test {
 
         assertEq(amount, donationAmount * 2);
         assertEq(isAccepted, false);
+        assertEq(donor1.balance, initialBalance - donationAmount);
+        assertEq(donor2.balance, initialBalance - donationAmount);
     }
 
     function testDonateMultipleFromSameDonor() public {
@@ -117,6 +121,7 @@ contract CrowdfundoorTest is Test {
 
         assertEq(amount, donationAmount1 + donationAmount2);
         assertEq(isAccepted, false);
+        assertEq(donor1.balance, initialBalance - donationAmount1 - donationAmount2);
     }
 
     function testDonateMultipleFromSeparateDonors() public {
@@ -140,6 +145,8 @@ contract CrowdfundoorTest is Test {
 
         assertEq(amount, donationAmount1 * 2 + donationAmount2 * 2);
         assertEq(isAccepted, false);
+        assertEq(donor1.balance, 100 ether - donationAmount1 * 2);
+        assertEq(donor2.balance, 100 ether - donationAmount2 * 2);
     }
 
     function testWithdraw() public {
@@ -172,6 +179,32 @@ contract CrowdfundoorTest is Test {
         assertEq(amount, 0);
         assertEq(isAccepted, true);
         assertEq(mock721.ownerOf(tokenId), recipient1);
+        assertEq(hodler1.balance, initialBalance + donationAmount);
+    }
+
+    function testAcceptWhenOwnerAccepts() public {
+        uint256 campaignId = crowdfundoor.startCampaign(address(mock721), tokenId, recipient1);
+        uint256 donationAmount = 1 ether;
+
+        vm.prank(donor1);
+        crowdfundoor.donate{value: donationAmount}(campaignId);
+
+        vm.prank(hodler1);
+        mock721.transferFrom(address(hodler1), recipient1, tokenId);
+
+        assertEq(recipient1.balance, 0 ether);
+
+        vm.startPrank(recipient1);
+        mock721.approve(address(crowdfundoor), tokenId);
+        crowdfundoor.accept(campaignId, donationAmount);
+        vm.stopPrank();
+
+        (uint256 amount,,,, bool isAccepted) = crowdfundoor.campaigns(campaignId);
+
+        assertEq(amount, 0);
+        assertEq(isAccepted, true);
+        assertEq(mock721.ownerOf(tokenId), recipient1);
+        assertEq(recipient1.balance, donationAmount);
     }
 
     function testFailAcceptDueToMinimumNotMet() public {
